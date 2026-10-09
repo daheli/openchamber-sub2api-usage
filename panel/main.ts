@@ -163,7 +163,7 @@ host.onReady(context => {
   void refresh();
   if (!timer) timer = setInterval(() => {
     if (!document.hidden) void refresh();
-  }, 300_000);
+  }, 600_000);
 });
 controls.button.addEventListener('click', () => void refresh(true));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });

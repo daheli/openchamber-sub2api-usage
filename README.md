@@ -63,13 +63,13 @@ Set `SUB2API_CODEX_ACCOUNT_ID`, `SUB2API_ADMIN_ACCESS_TOKEN`, and `SUB2API_ADMIN
 
 Access tokens expire after 24 hours. Before an admin request, the service refreshes an expired or nearly expired access token through `/api/v1/auth/refresh` and atomically stores both returned tokens back into the mode-`0600` `.env`. It never stores the account password. If the refresh token is revoked or expires, sign in again and update `.env`.
 
-The active usage endpoint can probe the Codex upstream when its cached quota snapshot is missing or stale. The local service caches results for 300 seconds; manual refresh bypasses only this local cache.
+The active usage endpoint can probe the Codex upstream when its cached quota snapshot is missing or stale. The local service caches results for 600 seconds; manual refresh bypasses only this local cache.
 
-**Service permission.** OpenChamber guest services do not run in an OS sandbox. The service runs as your user and could access other files that user can read. This implementation only opens this extension's `.env`, binds HTTP to `127.0.0.1`, authenticates the host proxy, and returns the two usage values. Review the source before approving it in Settings → Extensions.
+**Service permission.** OpenChamber guest services do not run in an OS sandbox. The service runs as your user and could access other files that user can read. This implementation only opens this extension's `.env`, binds HTTP to `127.0.0.1`, authenticates the host proxy, and returns the two key usage values plus the configured Codex quota. Review the source before approving it in Settings → Extensions.
 
 ## Refresh and authentication failures
 
-The local service caches gateway responses for 300 seconds across session and iframe reloads. A session change may call the local service, but it does not request Sub2API again while the cache is valid. The panel also refreshes on initial open and when returning to the foreground, then every 300 seconds while visible. Manual refresh bypasses the cache. The service rereads `.env` for each request, so after rotating a key, update `.env`, keep mode `0600`, and refresh the panel.
+The local service caches gateway responses for 600 seconds across session and iframe reloads. A session change may call the local service, but it does not request Sub2API again while the cache is valid. The panel also refreshes on initial open and when returning to the foreground, then every 600 seconds while visible. Manual refresh bypasses the cache. The service rereads `.env` for each request, so after rotating a key, update `.env`, keep mode `0600`, and refresh the panel.
 
 ## Build and test
 

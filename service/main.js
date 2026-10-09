@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const HOST = '127.0.0.1';
 const REQUEST_TIMEOUT_MS = 15_000;
-const CACHE_TTL_MS = 300_000;
+const CACHE_TTL_MS = 600_000;
 const REQUEST_BODY_MAX_BYTES = 1024;
 const DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = path.join(DIRECTORY, '..', '.env');
