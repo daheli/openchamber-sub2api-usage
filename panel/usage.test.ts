@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readDailyCosts, reportingDay } from './usage';
+import { formatRemainingDuration, readDailyCosts, reportingDay } from './usage';
 
 const noCodexQuota = { ok: false, accountId: 6, error: 'admin-credentials-not-configured' };
 
@@ -56,5 +56,11 @@ describe('Sub2API daily charged cost', () => {
     expect(parsed.codex7d).toEqual({
       ok: true, accountId: 6, usedPercent: 42.75, resetsAt: null, updatedAt: '2026-10-09T00:00:00Z',
     });
+  });
+  test('formats the Codex 7d reset duration in days and hours', () => {
+    expect(formatRemainingDuration(412015)).toBe('4d 18h');
+    expect(formatRemainingDuration(4 * 3600)).toBe('0d 4h');
+    expect(formatRemainingDuration(120)).toBe('2m');
+    expect(formatRemainingDuration(-1)).toBe('0m');
   });
 });

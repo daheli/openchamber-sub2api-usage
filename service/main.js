@@ -237,6 +237,9 @@ const getCodex7dUsage = async (config) => {
       ok: true,
       accountId: config.codexAccountId,
       usedPercent,
+      remainingSeconds: Number.isFinite(envelope.data.seven_day.remaining_seconds)
+        ? Math.max(0, Math.floor(envelope.data.seven_day.remaining_seconds))
+        : null,
       resetsAt: envelope.data.seven_day.resets_at ?? null,
       updatedAt: envelope.data.updated_at ?? null,
     };

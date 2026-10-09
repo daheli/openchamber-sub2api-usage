@@ -15,6 +15,7 @@ const serviceResponse = z.object({
     ok: z.boolean(),
     accountId: z.number().int().positive().optional(),
     usedPercent: z.number().finite().nonnegative().optional(),
+    remainingSeconds: z.number().finite().nonnegative().nullable().optional(),
     resetsAt: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional(),
     error: z.enum([
@@ -56,6 +57,16 @@ export function readDailyCosts(body: string, ids: readonly number[]): {
     results.set(id, { value: todayActualCost.data, name: row.name });
   }
   return { results, codex7d: parsed.codex7d, fetchedAt: parsed.fetchedAt };
+}
+
+export function formatRemainingDuration(seconds: number): string {
+  const remaining = Math.max(0, Math.floor(seconds));
+  const totalHours = Math.floor(remaining / 3600);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return days === 0 && hours === 0
+    ? `${Math.ceil(remaining / 60)}m`
+    : `${days}d ${hours}h`;
 }
 
 export const reportingDay = (date = new Date()): string =>

@@ -1,6 +1,6 @@
 import { connectHost, HostRequestError } from '@openchamber/sdk';
 import { applyHostReady } from '@openchamber/sdk/ui';
-import { readDailyCosts, reportingDay } from './usage';
+import { formatRemainingDuration, readDailyCosts, reportingDay } from './usage';
 
 const host = connectHost();
 const notice = document.querySelector<HTMLElement>('#notice');
@@ -35,7 +35,9 @@ let inFlight = false;
 const samples = new Map<number, { value: number; day: string }>();
 let codexSample: number | null = null;
 let codexAccountId: number | null = null;
+let codexResetAt: number | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
+let codexDisplayTimer: ReturnType<typeof setInterval> | null = null;
 const text = () => locale.startsWith('zh')
   ? { today: '今日用量', refresh: '刷新', loading: '更新中…',
       serviceNeeded: '请检查 .env 文件及设置 → 扩展中的 Service 授权',
@@ -64,6 +66,17 @@ function renderSample() {
     row.amount.textContent = sample ? `$${sample.value.toFixed(4)}` : '—';
   }
   controls.codexAmount.textContent = codexSample === null ? '—' : `${codexSample.toFixed(1)}%`;
+  updateCodexLabel();
+}
+
+function updateCodexLabel() {
+  const prefix = locale.startsWith('zh') ? 'Codex 7d 已用' : 'Codex 7d used';
+  if (codexResetAt === null) {
+    controls.codexLabel.textContent = prefix;
+    return;
+  }
+  const remaining = Math.max(0, Math.floor((codexResetAt - Date.now()) / 1000));
+  controls.codexLabel.textContent = `${prefix} (${formatRemainingDuration(remaining)})`;
 }
 
 async function refresh(force = false) {
@@ -102,14 +115,22 @@ async function refresh(force = false) {
     if (codex7d.accountId !== undefined && codex7d.accountId !== codexAccountId) {
       codexAccountId = codex7d.accountId;
       codexSample = null;
+      codexResetAt = null;
     }
     if (codex7d.error === 'account-id-not-configured') {
       codexAccountId = null;
       codexSample = null;
+      codexResetAt = null;
     }
     controls.codexName.textContent = codexAccountId ? `Codex account ${codexAccountId}` : 'Codex account';
     if (codex7d.ok && codex7d.usedPercent !== undefined) {
       codexSample = codex7d.usedPercent;
+      const resetsAt = codex7d.resetsAt ? Date.parse(codex7d.resetsAt) : Number.NaN;
+      codexResetAt = Number.isFinite(resetsAt)
+        ? resetsAt
+        : codex7d.remainingSeconds !== null && codex7d.remainingSeconds !== undefined
+          ? fetchedAt + codex7d.remainingSeconds * 1000
+          : null;
       controls.codexStatus.textContent = '';
     } else {
       partial = true;
@@ -155,7 +176,7 @@ host.onReady(context => {
     if (!initialized) row.key.textContent = row.fallback;
   }
   controls.button.textContent = text().refresh;
-  controls.codexLabel.textContent = locale.startsWith('zh') ? 'Codex 7d 已用' : 'Codex 7d used';
+  updateCodexLabel();
   if (initialized) return;
   initialized = true;
   ready = true;
@@ -164,6 +185,7 @@ host.onReady(context => {
   if (!timer) timer = setInterval(() => {
     if (!document.hidden) void refresh();
   }, 600_000);
+  if (!codexDisplayTimer) codexDisplayTimer = setInterval(updateCodexLabel, 60_000);
 });
 controls.button.addEventListener('click', () => void refresh(true));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
@@ -171,5 +193,6 @@ window.addEventListener('pagehide', () => {
   generation += 1;
   ready = false;
   if (timer) clearInterval(timer);
+  if (codexDisplayTimer) clearInterval(codexDisplayTimer);
   host.dispose();
 }, { once: true });
