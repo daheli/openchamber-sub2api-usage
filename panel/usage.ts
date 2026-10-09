@@ -11,6 +11,17 @@ const serviceResultBase = z.object({
 const serviceResult = serviceResultBase.extend({ todayActualCost: z.unknown().optional() });
 const serviceResponse = z.object({
   results: z.array(z.unknown()),
+  codex7d: z.object({
+    ok: z.boolean(),
+    accountId: z.number().int().positive().optional(),
+    usedPercent: z.number().finite().nonnegative().optional(),
+    resetsAt: z.string().nullable().optional(),
+    updatedAt: z.string().nullable().optional(),
+    error: z.enum([
+      'account-id-not-configured', 'admin-credentials-not-configured', 'admin-login-expired',
+      'admin-permission-denied', 'admin-usage-unavailable', 'codex-7d-unavailable',
+    ]).optional(),
+  }),
   fetchedAt: z.number().finite(),
 });
 
@@ -18,7 +29,11 @@ const serviceResponse = z.object({
 // erase another key's valid reading or silently turn into zero usage.
 export type DailyCostResult = { value: number; name: string } | { error: string; name?: string };
 
-export function readDailyCosts(body: string, ids: readonly number[]): { results: Map<number, DailyCostResult>; fetchedAt: number } {
+export function readDailyCosts(body: string, ids: readonly number[]): {
+  results: Map<number, DailyCostResult>;
+  codex7d: z.infer<typeof serviceResponse>['codex7d'];
+  fetchedAt: number;
+} {
   const parsed = serviceResponse.parse(JSON.parse(body));
   const byId = new Map<number, z.infer<typeof serviceResult>>();
   for (const entry of parsed.results) {
@@ -40,7 +55,7 @@ export function readDailyCosts(body: string, ids: readonly number[]): { results:
     }
     results.set(id, { value: todayActualCost.data, name: row.name });
   }
-  return { results, fetchedAt: parsed.fetchedAt };
+  return { results, codex7d: parsed.codex7d, fetchedAt: parsed.fetchedAt };
 }
 
 export const reportingDay = (date = new Date()): string =>

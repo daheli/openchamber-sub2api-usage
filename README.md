@@ -57,6 +57,14 @@ chmod 600 .env
 
 `.env` is excluded by `.gitignore`. Commit `.env.example`, never `.env`. The UI iframe receives only the key names and usage amounts. The local service reads `.env` and sends each key only to the configured Sub2API origin, using the fixed `/v1/usage` path.
 
+## Optional Codex 7d quota
+
+Set `SUB2API_CODEX_ACCOUNT_ID`, `SUB2API_ADMIN_ACCESS_TOKEN`, and `SUB2API_ADMIN_REFRESH_TOKEN` in `.env` to add that account's Codex 7d utilization. The service calls `/api/v1/admin/accounts/{account_id}/usage?source=active` and displays `data.seven_day.utilization` as a percentage. This requires an account with Sub2API admin permission; it is separate from the two inference API keys.
+
+Access tokens expire after 24 hours. Before an admin request, the service refreshes an expired or nearly expired access token through `/api/v1/auth/refresh` and atomically stores both returned tokens back into the mode-`0600` `.env`. It never stores the account password. If the refresh token is revoked or expires, sign in again and update `.env`.
+
+The active usage endpoint can probe the Codex upstream when its cached quota snapshot is missing or stale. The local service caches results for 300 seconds; manual refresh bypasses only this local cache.
+
 **Service permission.** OpenChamber guest services do not run in an OS sandbox. The service runs as your user and could access other files that user can read. This implementation only opens this extension's `.env`, binds HTTP to `127.0.0.1`, authenticates the host proxy, and returns the two usage values. Review the source before approving it in Settings → Extensions.
 
 ## Refresh and authentication failures

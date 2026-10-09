@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -30,6 +30,7 @@ const readEnv = async () => {
   }
 
   const result = new Map();
+  const optionalSecrets = new Set(['SUB2API_ADMIN_ACCESS_TOKEN', 'SUB2API_ADMIN_REFRESH_TOKEN']);
   const contents = await fs.readFile(ENV_PATH, 'utf8');
   for (const rawLine of contents.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -38,7 +39,7 @@ const readEnv = async () => {
     if (split <= 0) throw new Error('Invalid local .env line');
     const name = line.slice(0, split).trim();
     const value = line.slice(split + 1).trim();
-    if (result.has(name) || !/^[A-Z][A-Z0-9_]*$/.test(name) || !value || /[\r\n]/.test(value)) {
+    if (result.has(name) || !/^[A-Z][A-Z0-9_]*$/.test(name) || (!value && !optionalSecrets.has(name)) || /[\r\n]/.test(value)) {
       throw new Error('Invalid local .env entry');
     }
     result.set(name, value);
@@ -73,7 +74,21 @@ const readEnv = async () => {
   if (keys[0].id === keys[1].id || keys[0].token === keys[1].token) {
     throw new Error('The two Sub2API key entries must be distinct');
   }
-  return { apiOrigin, keys, fingerprint: createHash('sha256').update(contents).digest('hex') };
+  const rawAccountId = result.get('SUB2API_CODEX_ACCOUNT_ID') ?? '';
+  const accountId = Number(rawAccountId);
+  if (rawAccountId && !rawAccountId.startsWith('replace-with-') && (!Number.isSafeInteger(accountId) || accountId < 1)) {
+    throw new Error('SUB2API_CODEX_ACCOUNT_ID must be a positive integer');
+  }
+  const adminAccessToken = result.get('SUB2API_ADMIN_ACCESS_TOKEN') ?? '';
+  const adminRefreshToken = result.get('SUB2API_ADMIN_REFRESH_TOKEN') ?? '';
+  return {
+    apiOrigin,
+    keys,
+    codexAccountId: Number.isSafeInteger(accountId) && accountId > 0 ? accountId : null,
+    adminAccessToken: adminAccessToken.startsWith('replace-with-') ? '' : adminAccessToken,
+    adminRefreshToken: adminRefreshToken.startsWith('replace-with-') ? '' : adminRefreshToken,
+    fingerprint: createHash('sha256').update(contents).digest('hex'),
+  };
 };
 
 const readCost = async ({ id, name, token }, apiOrigin) => {
@@ -99,6 +114,137 @@ const readCost = async ({ id, name, token }, apiOrigin) => {
   }
 };
 
+const replaceAdminTokens = async (accessToken, refreshToken) => {
+  const info = await fs.lstat(ENV_PATH);
+  if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
+    throw new Error('The local .env file must be a regular file with mode 0600');
+  }
+  if (typeof process.getuid === 'function' && info.uid !== process.getuid()) {
+    throw new Error('The local .env file must belong to the service user');
+  }
+
+  const source = await fs.readFile(ENV_PATH, 'utf8');
+  const values = new Map([
+    ['SUB2API_ADMIN_ACCESS_TOKEN', accessToken],
+    ['SUB2API_ADMIN_REFRESH_TOKEN', refreshToken],
+  ]);
+  const written = new Set();
+  const lines = source.split(/\r?\n/).map(line => {
+    const split = line.indexOf('=');
+    if (split < 0) return line;
+    const name = line.slice(0, split).trim();
+    if (!values.has(name)) return line;
+    written.add(name);
+    return `${name}=${values.get(name)}`;
+  });
+  for (const [name, value] of values) {
+    if (!written.has(name)) lines.push(`${name}=${value}`);
+  }
+
+  const tempPath = `${ENV_PATH}.${process.pid}.${randomUUID()}.tmp`;
+  const handle = await fs.open(tempPath, 'wx', 0o600);
+  try {
+    await handle.writeFile(`${lines.join('\n').replace(/\n+$/, '')}\n`, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await fs.rename(tempPath, ENV_PATH);
+    await fs.chmod(ENV_PATH, 0o600);
+  } catch (error) {
+    await fs.rm(tempPath, { force: true });
+    throw error;
+  }
+};
+
+const refreshAdminTokens = async (config) => {
+  if (!config.adminRefreshToken) return null;
+  try {
+    const response = await fetch(new URL('/api/v1/auth/refresh', config.apiOrigin), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ refresh_token: config.adminRefreshToken }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const envelope = await response.json();
+    if (envelope?.code !== 0 || !envelope.data) return null;
+    const accessToken = envelope.data.access_token;
+    const refreshToken = envelope.data.refresh_token ?? config.adminRefreshToken;
+    if (typeof accessToken !== 'string' || !accessToken || typeof refreshToken !== 'string' || !refreshToken) return null;
+    await replaceAdminTokens(accessToken, refreshToken);
+    return await readEnv();
+  } catch {
+    return null;
+  }
+};
+
+const accessTokenExpiresSoon = (token) => {
+  try {
+    const encoded = token.split('.')[1];
+    if (!encoded) return true;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    return typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now() + 60_000;
+  } catch {
+    return true;
+  }
+};
+
+const getCodex7dUsage = async (config) => {
+  const failure = (error) => ({
+    ok: false,
+    ...(config.codexAccountId ? { accountId: config.codexAccountId } : {}),
+    error,
+  });
+  if (!config.codexAccountId) return failure('account-id-not-configured');
+  if (!config.adminAccessToken && !config.adminRefreshToken) {
+    return failure('admin-credentials-not-configured');
+  }
+
+  let auth = config;
+  if (!auth.adminAccessToken || accessTokenExpiresSoon(auth.adminAccessToken)) {
+    auth = await refreshAdminTokens(auth);
+    if (!auth) return failure('admin-login-expired');
+  }
+
+  const url = new URL(`/api/v1/admin/accounts/${config.codexAccountId}/usage?source=active`, config.apiOrigin);
+  const send = (token) => fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  try {
+    let response = await send(auth.adminAccessToken);
+    if (response.status === 401) {
+      auth = await refreshAdminTokens(auth);
+      if (!auth) return failure('admin-login-expired');
+      response = await send(auth.adminAccessToken);
+    }
+    if (response.status === 401) return failure('admin-login-expired');
+    if (response.status === 403) return failure('admin-permission-denied');
+    if (!response.ok) return failure('admin-usage-unavailable');
+
+    const envelope = await response.json();
+    if (envelope?.code !== 0 || !envelope.data) return failure('admin-usage-unavailable');
+    const usedPercent = envelope.data.seven_day?.utilization;
+    if (typeof usedPercent !== 'number' || !Number.isFinite(usedPercent) || usedPercent < 0) {
+      return failure('codex-7d-unavailable');
+    }
+    return {
+      ok: true,
+      accountId: config.codexAccountId,
+      usedPercent,
+      resetsAt: envelope.data.seven_day.resets_at ?? null,
+      updatedAt: envelope.data.updated_at ?? null,
+    };
+  } catch {
+    return failure('admin-usage-unavailable');
+  }
+};
+
 const getDailyUsage = async (config, { force }) => {
   const now = Date.now();
   if (
@@ -106,15 +252,17 @@ const getDailyUsage = async (config, { force }) => {
     && cachedUsage?.fingerprint === config.fingerprint
     && now - cachedUsage.fetchedAt < CACHE_TTL_MS
   ) {
-    return { results: cachedUsage.results, fetchedAt: cachedUsage.fetchedAt };
+      return { results: cachedUsage.results, codex7d: cachedUsage.codex7d, fetchedAt: cachedUsage.fetchedAt };
   }
   if (pendingUsage?.fingerprint === config.fingerprint) return pendingUsage.promise;
 
-  const promise = Promise.all(config.keys.map(key => readCost(key, config.apiOrigin)))
-    .then(results => {
+  const promise = Promise.all([
+    Promise.all(config.keys.map(key => readCost(key, config.apiOrigin))),
+    getCodex7dUsage(config),
+  ]).then(([results, codex7d]) => {
       const fetchedAt = Date.now();
-      cachedUsage = { fingerprint: config.fingerprint, results, fetchedAt };
-      return { results, fetchedAt };
+      cachedUsage = { fingerprint: config.fingerprint, results, codex7d, fetchedAt };
+      return { results, codex7d, fetchedAt };
     });
   const pending = { fingerprint: config.fingerprint, promise };
   pendingUsage = pending;
