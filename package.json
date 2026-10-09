@@ -1,0 +1,37 @@
+{
+  "name": "openchamber-sub2api-usage",
+  "version": "1.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build panel/main.ts --outdir panel --format iife --target browser --minify",
+    "test": "bun test panel/usage.test.ts"
+  },
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": { "openchamber": ">=2.1.1" },
+    "contributes": {
+      "panel": {
+        "id": "sub2api-usage",
+        "name": "Sub2API",
+        "icon": "bar-chart",
+        "entry": "panel/index.html"
+      },
+      "statusSection": {
+        "entry": "panel/index.html",
+        "title": "Sub2API",
+        "height": 176,
+        "defaultExpanded": true,
+        "requiresProject": false
+      },
+      "service": {
+        "entry": "service/main.js",
+        "runtime": "host"
+      }
+    }
+  },
+  "devDependencies": {
+    "@openchamber/sdk": "^2.1.1",
+    "zod": "^4.3.6"
+  }
+}

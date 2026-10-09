@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.playwright-cli/
+.playwright/
+.DS_Store
+validation.json

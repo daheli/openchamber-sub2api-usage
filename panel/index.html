@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sub2API</title>
+    <style>
+      * { box-sizing: border-box; }
+      /* Keep the SDK's host-matching color-scheme: overriding it can make
+         Chromium paint an opaque iframe canvas instead of the host surface. */
+      html, body { margin: 0; background: transparent; color: var(--oc-fg); font-family: var(--oc-font); }
+      main, .key-row, .heading, .reading, footer, .key, .label, .amount { background: transparent; }
+      main { padding: 10px 12px; }
+      .key-row + .key-row { margin-top: 12px; }
+      .heading, .reading, footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .key { color: var(--oc-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .reading { margin: 6px 0; }
+      .label { font-size: 12px; }
+      .amount { font: 600 14px var(--oc-mono); font-variant-numeric: tabular-nums; }
+      footer { color: var(--oc-muted); font-size: 10px; min-height: 20px; }
+      #notice { flex: 1; line-height: 1.4; }
+      .row-status { margin: 0; color: var(--oc-error-text, var(--oc-fg)); font-size: 10px; }
+      .row-status:empty { display: none; }
+      #notice[data-error="true"] { color: var(--oc-error-text, var(--oc-fg)); }
+      button { border: 0; border-radius: 5px; padding: 4px 6px; background: transparent; color: var(--oc-muted); font: inherit; cursor: pointer; }
+      button:hover { background: var(--oc-hover); color: var(--oc-fg); }
+      button:focus-visible { outline: 2px solid var(--oc-focus); outline-offset: 2px; }
+      button:disabled { opacity: .5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="key-row" data-key-id="2">
+        <div class="heading"><span class="key" id="key-2">API key 2</span></div>
+        <div class="reading"><span class="label">今日用量</span><output class="amount" id="amount-2" aria-live="polite">—</output></div>
+        <p class="row-status" id="status-2" role="status"></p>
+      </section>
+      <section class="key-row" data-key-id="1">
+        <div class="heading"><span class="key" id="key-1">API key 1</span></div>
+        <div class="reading"><span class="label">今日用量</span><output class="amount" id="amount-1" aria-live="polite">—</output></div>
+        <p class="row-status" id="status-1" role="status"></p>
+      </section>
+      <footer><span id="notice" role="status">正在连接…</span><button id="refresh" type="button" disabled>刷新</button></footer>
+    </main>
+    <script src="main.js"></script>
+  </body>
+</html>
