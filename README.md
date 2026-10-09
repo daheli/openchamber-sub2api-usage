@@ -61,7 +61,7 @@ chmod 600 .env
 
 ## Refresh and authentication failures
 
-The panel fetches on open and foreground, supports manual refresh, and refreshes every 300 seconds while visible. The service rereads `.env` for each request, so after rotating a key, update `.env`, keep mode `0600`, and refresh the panel.
+The local service caches gateway responses for 300 seconds across session and iframe reloads. A session change may call the local service, but it does not request Sub2API again while the cache is valid. The panel also refreshes on initial open and when returning to the foreground, then every 300 seconds while visible. Manual refresh bypasses the cache. The service rereads `.env` for each request, so after rotating a key, update `.env`, keep mode `0600`, and refresh the panel.
 
 ## Build and test
 

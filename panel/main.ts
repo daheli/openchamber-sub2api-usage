@@ -22,6 +22,7 @@ const rows = [
 
 let locale = 'zh-CN';
 let ready = false;
+let initialized = false;
 let generation = 0;
 let inFlight = false;
 const samples = new Map<number, { value: number; day: string }>();
@@ -45,7 +46,7 @@ function renderSample() {
   }
 }
 
-async function refresh() {
+async function refresh(force = false) {
   if (!ready || inFlight) return;
   const owner = generation;
   inFlight = true;
@@ -57,11 +58,11 @@ async function refresh() {
   try {
     const response = await host.serviceRequest({
       method: 'POST', path: '/usage',
-      body: JSON.stringify({ keyIds: rows.map(row => row.id) }),
+      body: JSON.stringify({ keyIds: rows.map(row => row.id), force }),
     });
     if (owner !== generation) return;
     if (response.status !== 200) throw new Error('Usage request failed');
-    const values = readDailyCosts(response.body, rows.map(row => row.id));
+    const { results: values, fetchedAt } = readDailyCosts(response.body, rows.map(row => row.id));
     if (day !== reportingDay()) throw new Error('Reporting day changed');
     let partial = false;
     for (const row of rows) {
@@ -80,7 +81,7 @@ async function refresh() {
     }
     renderSample();
     controls.notice.dataset.error = String(partial);
-    controls.notice.textContent = partial ? text().partial : `${text().updated} ${new Date().toLocaleTimeString(locale, {
+    controls.notice.textContent = partial ? text().partial : `${text().updated} ${new Date(fetchedAt).toLocaleTimeString(locale, {
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     })}`;
   } catch (error) {
@@ -104,9 +105,11 @@ host.onReady(context => {
   locale = context.locale;
   for (const row of rows) {
     row.label.textContent = text().today;
-    row.key.textContent = row.fallback;
+    if (!initialized) row.key.textContent = row.fallback;
   }
   controls.button.textContent = text().refresh;
+  if (initialized) return;
+  initialized = true;
   ready = true;
   controls.button.disabled = false;
   void refresh();
@@ -114,7 +117,7 @@ host.onReady(context => {
     if (!document.hidden) void refresh();
   }, 300_000);
 });
-controls.button.addEventListener('click', () => void refresh());
+controls.button.addEventListener('click', () => void refresh(true));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
 window.addEventListener('pagehide', () => {
   generation += 1;

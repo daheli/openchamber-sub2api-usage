@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -6,11 +6,14 @@ import { fileURLToPath } from 'node:url';
 
 const HOST = '127.0.0.1';
 const REQUEST_TIMEOUT_MS = 15_000;
+const CACHE_TTL_MS = 300_000;
 const REQUEST_BODY_MAX_BYTES = 1024;
 const DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = path.join(DIRECTORY, '..', '.env');
 const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
 const serviceToken = process.env.OPENCHAMBER_SERVICE_TOKEN;
+let cachedUsage = null;
+let pendingUsage = null;
 
 const respond = (response, status, body) => {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -70,7 +73,7 @@ const readEnv = async () => {
   if (keys[0].id === keys[1].id || keys[0].token === keys[1].token) {
     throw new Error('The two Sub2API key entries must be distinct');
   }
-  return { apiOrigin, keys };
+  return { apiOrigin, keys, fingerprint: createHash('sha256').update(contents).digest('hex') };
 };
 
 const readCost = async ({ id, name, token }, apiOrigin) => {
@@ -93,6 +96,32 @@ const readCost = async ({ id, name, token }, apiOrigin) => {
   } catch (error) {
     const code = error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'request-failed';
     return { id, name, ok: false, error: code };
+  }
+};
+
+const getDailyUsage = async (config, { force }) => {
+  const now = Date.now();
+  if (
+    !force
+    && cachedUsage?.fingerprint === config.fingerprint
+    && now - cachedUsage.fetchedAt < CACHE_TTL_MS
+  ) {
+    return { results: cachedUsage.results, fetchedAt: cachedUsage.fetchedAt };
+  }
+  if (pendingUsage?.fingerprint === config.fingerprint) return pendingUsage.promise;
+
+  const promise = Promise.all(config.keys.map(key => readCost(key, config.apiOrigin)))
+    .then(results => {
+      const fetchedAt = Date.now();
+      cachedUsage = { fingerprint: config.fingerprint, results, fetchedAt };
+      return { results, fetchedAt };
+    });
+  const pending = { fingerprint: config.fingerprint, promise };
+  pendingUsage = pending;
+  try {
+    return await promise;
+  } finally {
+    if (pendingUsage === pending) pendingUsage = null;
   }
 };
 
@@ -131,12 +160,18 @@ const server = http.createServer(async (request, response) => {
 
   try {
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (!Array.isArray(body.keyIds) || body.keyIds.length !== 2 || body.keyIds[0] !== 2 || body.keyIds[1] !== 1) {
+    if (
+      !Array.isArray(body.keyIds)
+      || body.keyIds.length !== 2
+      || body.keyIds[0] !== 2
+      || body.keyIds[1] !== 1
+      || (body.force !== undefined && typeof body.force !== 'boolean')
+    ) {
       return respond(response, 400, { error: 'invalid-key-selection' });
     }
     const config = await readEnv();
-    const results = await Promise.all(config.keys.map(key => readCost(key, config.apiOrigin)));
-    return respond(response, 200, { results, fetchedAt: Date.now() });
+    const usage = await getDailyUsage(config, { force: body.force === true });
+    return respond(response, 200, usage);
   } catch {
     return respond(response, 503, { error: 'local-credentials-unavailable' });
   }

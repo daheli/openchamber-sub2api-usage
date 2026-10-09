@@ -3,16 +3,18 @@ import { readDailyCosts, reportingDay } from './usage';
 
 describe('Sub2API daily charged cost', () => {
   test.each([0, 0.2463, '0.37877685'])('reads todayActualCost %s from the service response', value => {
-    const body = JSON.stringify({ results: [
+    const body = JSON.stringify({ fetchedAt: 1, results: [
       { id: 1, name: 'example-key-b', ok: true, todayActualCost: 84.9978 },
       { id: 2, name: 'example-key-a', ok: true, todayActualCost: value },
     ] });
-    const result = readDailyCosts(body, [2, 1]);
+    const parsed = readDailyCosts(body, [2, 1]);
+    const result = parsed.results;
+    expect(parsed.fetchedAt).toBe(1);
     expect(result.get(2)).toEqual({ value: Number(value), name: 'example-key-a' });
     expect(result.get(1)).toEqual({ value: 84.9978, name: 'example-key-b' });
   });
   test.each([null, '', ' ', 'NaN', 'Infinity', -1, true, [], {}].map(value => [value]))('rejects invalid cost %j', actual_cost => {
-    const result = readDailyCosts(JSON.stringify({ results: [
+    const { results: result } = readDailyCosts(JSON.stringify({ fetchedAt: 1, results: [
       { id: 1, name: 'example-key-a', ok: true, todayActualCost: 10 },
       { id: 2, name: 'example-key-b', ok: true, todayActualCost: actual_cost },
     ] }), [1, 2]);
@@ -23,15 +25,15 @@ describe('Sub2API daily charged cost', () => {
     expect(() => readDailyCosts(body, [1, 2])).toThrow();
   });
   test('does not confuse a swapped ID with the requested key', () => {
-    expect(readDailyCosts(JSON.stringify({ results: [
+    expect(readDailyCosts(JSON.stringify({ fetchedAt: 1, results: [
       { id: 2, name: 'example-key-b', ok: true, todayActualCost: 99 },
-    ] }), [1, 2])).toEqual(new Map([
+    ] }), [1, 2])).toEqual({ fetchedAt: 1, results: new Map([
       [1, { error: 'missing-key' }],
       [2, { value: 99, name: 'example-key-b' }],
-    ]));
+    ]) });
   });
   test('missing selected keys do not become zero, unrelated keys are ignored', () => {
-    const result = readDailyCosts(JSON.stringify({ results: [
+    const { results: result } = readDailyCosts(JSON.stringify({ fetchedAt: 1, results: [
       { id: 1, name: 'example-key-a', ok: true, todayActualCost: 0 },
       { id: 17, name: 'other', ok: true, todayActualCost: 5 },
     ] }), [2, 1]);

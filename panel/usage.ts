@@ -9,13 +9,16 @@ const serviceResultBase = z.object({
   error: z.enum(['credential-rejected', 'upstream-error', 'invalid-usage-data', 'timeout', 'request-failed']).optional(),
 });
 const serviceResult = serviceResultBase.extend({ todayActualCost: z.unknown().optional() });
-const serviceResponse = z.object({ results: z.array(z.unknown()) });
+const serviceResponse = z.object({
+  results: z.array(z.unknown()),
+  fetchedAt: z.number().finite(),
+});
 
 // Parse selected entries independently. A missing or malformed key must not
 // erase another key's valid reading or silently turn into zero usage.
 export type DailyCostResult = { value: number; name: string } | { error: string; name?: string };
 
-export function readDailyCosts(body: string, ids: readonly number[]): Map<number, DailyCostResult> {
+export function readDailyCosts(body: string, ids: readonly number[]): { results: Map<number, DailyCostResult>; fetchedAt: number } {
   const parsed = serviceResponse.parse(JSON.parse(body));
   const byId = new Map<number, z.infer<typeof serviceResult>>();
   for (const entry of parsed.results) {
@@ -37,7 +40,7 @@ export function readDailyCosts(body: string, ids: readonly number[]): Map<number
     }
     results.set(id, { value: todayActualCost.data, name: row.name });
   }
-  return results;
+  return { results, fetchedAt: parsed.fetchedAt };
 }
 
 export const reportingDay = (date = new Date()): string =>
