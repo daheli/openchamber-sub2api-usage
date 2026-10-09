@@ -59,7 +59,7 @@ chmod 600 .env
 
 ## Optional Codex 7d quota
 
-Set `SUB2API_CODEX_ACCOUNT_ID`, `SUB2API_ADMIN_ACCESS_TOKEN`, and `SUB2API_ADMIN_REFRESH_TOKEN` in `.env` to add that account's Codex 7d utilization. The service calls `/api/v1/admin/accounts/{account_id}/usage?source=active` and displays `data.seven_day.utilization` as a percentage. The row label also shows the time remaining until the weekly reset, such as `4d 18h`. Its countdown updates locally once a minute and does not make network requests. This requires an account with Sub2API admin permission; it is separate from the two inference API keys.
+Set `SUB2API_CODEX_ACCOUNT_ID`, `SUB2API_ADMIN_ACCESS_TOKEN`, and `SUB2API_ADMIN_REFRESH_TOKEN` in `.env` to add that account's Codex 7d utilization. The service calls `/api/v1/admin/accounts/{account_id}/usage?source=active` and displays `data.seven_day.utilization` as a percentage. The row label also shows the remaining time until the weekly reset, such as `4d 18h`; percentage and reset time update together on refresh. This requires an account with Sub2API admin permission; it is separate from the two inference API keys.
 
 Access tokens expire after 24 hours. Before an admin request, the service refreshes an expired or nearly expired access token through `/api/v1/auth/refresh` and atomically stores both returned tokens back into the mode-`0600` `.env`. It never stores the account password. If the refresh token is revoked or expires, sign in again and update `.env`.
 
