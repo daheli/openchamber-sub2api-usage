@@ -57,6 +57,8 @@ chmod 600 .env
 
 `.env` is excluded by `.gitignore`. Commit `.env.example`, never `.env`. The UI iframe receives only the key names and usage amounts. The local service reads `.env` and sends each key only to the configured Sub2API origin, using the fixed `/v1/usage` path.
 
+Add `SUB2API_KEY_<ID>_ORIGIN` when one key must use a different HTTPS gateway than `SUB2API_API_ORIGIN`. For example, `SUB2API_KEY_2_ORIGIN=https://other-gateway.example.com`. Each key then resolves its own origin, while Codex admin requests continue to use the global origin.
+
 ## Optional Codex 7d quota
 
 Set `SUB2API_CODEX_ACCOUNT_ID`, `SUB2API_ADMIN_ACCESS_TOKEN`, and `SUB2API_ADMIN_REFRESH_TOKEN` in `.env` to add that account's Codex 7d utilization. The service calls `/api/v1/admin/accounts/{account_id}/usage?source=active` and displays `data.seven_day.utilization` as a percentage. The row label also shows the remaining time until the weekly reset, such as `4d 18h`; percentage and reset time update together on refresh. This requires an account with Sub2API admin permission; it is separate from the two inference API keys.

@@ -45,22 +45,23 @@ const readEnv = async () => {
     result.set(name, value);
   }
 
-  const configuredOrigin = result.get('SUB2API_API_ORIGIN');
-  let apiOrigin;
-  try {
-    const parsed = new URL(configuredOrigin);
-    if (
-      parsed.protocol !== 'https:'
-      || parsed.username
-      || parsed.password
-      || parsed.pathname !== '/'
-      || parsed.search
-      || parsed.hash
-    ) throw new Error('invalid origin');
-    apiOrigin = parsed.origin;
-  } catch {
-    throw new Error('SUB2API_API_ORIGIN must be an HTTPS origin');
-  }
+  const parseHttpsOrigin = (value, setting) => {
+    try {
+      const parsed = new URL(value);
+      if (
+        parsed.protocol !== 'https:'
+        || parsed.username
+        || parsed.password
+        || parsed.pathname !== '/'
+        || parsed.search
+        || parsed.hash
+      ) throw new Error('invalid origin');
+      return parsed.origin;
+    } catch {
+      throw new Error(`${setting} must be an HTTPS origin`);
+    }
+  };
+  const apiOrigin = parseHttpsOrigin(result.get('SUB2API_API_ORIGIN'), 'SUB2API_API_ORIGIN');
 
   const keys = [1, 2].map(id => {
     const keyId = Number(result.get(`SUB2API_KEY_${id}_ID`));
@@ -69,7 +70,14 @@ const readEnv = async () => {
     if (keyId !== id || !name || !token || token.startsWith('replace-with-')) {
       throw new Error('Both Sub2API key entries must be configured');
     }
-    return { id: keyId, name, token };
+    const originSetting = `SUB2API_KEY_${id}_ORIGIN`;
+    const configuredKeyOrigin = result.get(originSetting);
+    return {
+      id: keyId,
+      name,
+      token,
+      origin: configuredKeyOrigin ? parseHttpsOrigin(configuredKeyOrigin, originSetting) : apiOrigin,
+    };
   });
   if (keys[0].id === keys[1].id || keys[0].token === keys[1].token) {
     throw new Error('The two Sub2API key entries must be distinct');
@@ -91,9 +99,9 @@ const readEnv = async () => {
   };
 };
 
-const readCost = async ({ id, name, token }, apiOrigin) => {
+const readCost = async ({ id, name, token, origin }) => {
   try {
-    const url = new URL('/v1/usage?days=1&timezone=Asia%2FShanghai', apiOrigin);
+    const url = new URL('/v1/usage?days=1&timezone=Asia%2FShanghai', origin);
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
       redirect: 'error',
@@ -260,7 +268,7 @@ const getDailyUsage = async (config, { force }) => {
   if (pendingUsage?.fingerprint === config.fingerprint) return pendingUsage.promise;
 
   const promise = Promise.all([
-    Promise.all(config.keys.map(key => readCost(key, config.apiOrigin))),
+    Promise.all(config.keys.map(key => readCost(key))),
     getCodex7dUsage(config),
   ]).then(([results, codex7d]) => {
       const fetchedAt = Date.now();
